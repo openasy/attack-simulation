@@ -1,0 +1,1897 @@
+{
+ "openapi": "3.1.1",
+ "info": {
+  "title": "OpenAsy Attack Simulation API",
+  "version": "0.1.0",
+  "summary": "Run harmless MITRE ATT&CK techniques from a fixed pack on hosts you allow, then check whether the detecting products saw them, and read coverage per technique.",
+  "description": "Every screen of Attack Simulation uses this API, and so can your scripts (ADR 0014). Within `/api/v1` changes are additive only; anything removed is deprecated first. Errors use Problem Details (RFC 9457).\n\nattack-simulation-agent enrols with a one-time or fleet enrolment token at `/api/v1/agent/enroll` and then calls `/api/v1/agent/*` with its own secret, which speaks for its host only. The server sends an agent only a test's pack id and a random marker, never a command; the agent runs the test from its own built-in pack and refuses any id it does not have (ADR 0072). Everything else takes the session of a signed-in person or an API token, and each operation names the role it needs (`x-openasy-role`: viewer, editor, admin; ADR 0003).\n\nSign-in, members and API tokens are under `/api/v1/auth`, provided by [@openasy/auth](https://github.com/openasy/auth#routes).",
+  "license": {
+   "name": "AGPL-3.0-only",
+   "identifier": "AGPL-3.0-only"
+  }
+ },
+ "servers": [
+  {
+   "url": "/",
+   "description": "This install"
+  }
+ ],
+ "tags": [
+  {
+   "name": "Tests",
+   "description": "The fixed, reviewed pack of benign tests."
+  },
+  {
+   "name": "Runs",
+   "description": "Runs of the pack on a host, and their steps."
+  },
+  {
+   "name": "Coverage",
+   "description": "Which techniques are detected and which are missed."
+  },
+  {
+   "name": "Hosts",
+   "description": "Hosts with the agent, allowing them for simulation, and enrolment tokens."
+  },
+  {
+   "name": "Agent",
+   "description": "What attack-simulation-agent calls. The server never calls it."
+  },
+  {
+   "name": "Product",
+   "description": "Version, health and overview of this install."
+  }
+ ],
+ "components": {
+  "securitySchemes": {
+   "session": {
+    "type": "apiKey",
+    "in": "cookie",
+    "name": "__Host-openasy-session",
+    "description": "The browser session after signing in (`openasy-session` on plain http://localhost). Requests that change something must come from this origin."
+   },
+   "apiToken": {
+    "type": "http",
+    "scheme": "bearer",
+    "description": "An API token created under Settings, API tokens (`oa_attack-simulation_...`): one role, always an expiry (ADR 0003)."
+   },
+   "adminToken": {
+    "type": "http",
+    "scheme": "bearer",
+    "description": "Only when the server is started by its tests or a local script: one shared token with the admin role. A production install does not have it."
+   },
+   "agentSecret": {
+    "type": "http",
+    "scheme": "bearer",
+    "description": "The secret attack-simulation-agent got when it enrolled (`aia_...`). It speaks for its own host only."
+   }
+  },
+  "responses": {
+   "Problem": {
+    "description": "An error, as RFC 9457 Problem Details.",
+    "content": {
+     "application/problem+json": {
+      "schema": {
+       "$ref": "#/components/schemas/Problem"
+      }
+     }
+    }
+   }
+  },
+  "schemas": {
+   "Problem": {
+    "type": "object",
+    "properties": {
+     "type": {
+      "type": "string",
+      "format": "uri"
+     },
+     "title": {
+      "type": "string"
+     },
+     "status": {
+      "type": "integer"
+     },
+     "code": {
+      "type": "string",
+      "enum": [
+       "invalid-token",
+       "invalid-json",
+       "invalid-body",
+       "not-found",
+       "conflict",
+       "payload-too-large",
+       "internal-error",
+       "unauthenticated",
+       "invalid-credentials",
+       "mfa-required",
+       "mfa-setup-required",
+       "forbidden",
+       "cross-site",
+       "rate-limited"
+      ],
+      "description": "Stable; match on this."
+     },
+     "detail": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "type",
+     "title",
+     "status",
+     "code"
+    ]
+   },
+   "Status": {
+    "type": "object",
+    "properties": {
+     "status": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "status"
+    ]
+   },
+   "ProductLink": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "url": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "url"
+    ]
+   },
+   "Report": {
+    "type": "object",
+    "properties": {
+     "version": {
+      "type": "string"
+     },
+     "os": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "kernel": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "arch": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "packIds": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": "string"
+      }
+     }
+    },
+    "required": [
+     "version"
+    ]
+   },
+   "EnrollmentToken": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "maxUses": {
+      "type": "integer"
+     },
+     "uses": {
+      "type": "integer"
+     },
+     "expiresAt": {
+      "type": "string"
+     },
+     "state": {
+      "type": "string",
+      "enum": [
+       "active",
+       "used",
+       "expired"
+      ]
+     },
+     "createdBy": {
+      "type": "string"
+     },
+     "createdAt": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "maxUses",
+     "uses",
+     "expiresAt",
+     "state",
+     "createdBy",
+     "createdAt"
+    ]
+   },
+   "NewEnrollmentToken": {
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/EnrollmentToken"
+     },
+     {
+      "type": "object",
+      "properties": {
+       "token": {
+        "type": "string",
+        "description": "Shown once."
+       }
+      },
+      "required": [
+       "token"
+      ]
+     }
+    ]
+   },
+   "Host": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "allowed",
+       "paused",
+       "silent"
+      ]
+     },
+     "version": {
+      "type": "string"
+     },
+     "outdated": {
+      "type": "boolean"
+     },
+     "os": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "kernel": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "arch": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "packIds": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "allowed": {
+      "type": "boolean"
+     },
+     "allowReason": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "allowedBy": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "allowedAt": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "enrolledAt": {
+      "type": "string"
+     },
+     "lastSeenAt": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "status",
+     "version",
+     "outdated",
+     "packIds",
+     "allowed",
+     "enrolledAt",
+     "lastSeenAt"
+    ]
+   },
+   "PackTest": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "technique": {
+      "type": "string"
+     },
+     "techniqueName": {
+      "type": "string"
+     },
+     "tactic": {
+      "type": "string"
+     },
+     "tacticId": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "description": {
+      "type": "string"
+     },
+     "expect": {
+      "type": "string"
+     },
+     "platforms": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "enum": [
+        "linux",
+        "darwin"
+       ]
+      }
+     }
+    },
+    "required": [
+     "id",
+     "technique",
+     "techniqueName",
+     "tactic",
+     "tacticId",
+     "name",
+     "description",
+     "expect",
+     "platforms"
+    ]
+   },
+   "Detection": {
+    "type": "object",
+    "properties": {
+     "product": {
+      "type": "string"
+     },
+     "id": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     },
+     "url": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "at": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "product",
+     "id",
+     "title",
+     "at"
+    ]
+   },
+   "Step": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "runId": {
+      "type": "string"
+     },
+     "host": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string"
+       },
+       "name": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "id",
+       "name"
+      ]
+     },
+     "test": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string"
+       },
+       "technique": {
+        "type": "string"
+       },
+       "techniqueName": {
+        "type": "string"
+       },
+       "tactic": {
+        "type": "string"
+       },
+       "tacticId": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "id",
+       "technique",
+       "techniqueName",
+       "tactic",
+       "tacticId"
+      ]
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "pending",
+       "running",
+       "done",
+       "error",
+       "refused"
+      ]
+     },
+     "outcome": {
+      "type": "string",
+      "enum": [
+       "pending",
+       "detected",
+       "missed",
+       "error"
+      ]
+     },
+     "marker": {
+      "type": "string"
+     },
+     "did": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "cleanedUp": {
+      "type": [
+       "boolean",
+       "null"
+      ]
+     },
+     "detail": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "error": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "detections": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Detection"
+      }
+     },
+     "ranAt": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "reportedAt": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "checkedAt": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "id",
+     "runId",
+     "host",
+     "test",
+     "status",
+     "outcome",
+     "marker",
+     "detections"
+    ]
+   },
+   "Run": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "host": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string"
+       },
+       "name": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "id",
+       "name"
+      ]
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "pending",
+       "running",
+       "done",
+       "canceled"
+      ]
+     },
+     "windowSeconds": {
+      "type": "integer"
+     },
+     "total": {
+      "type": "integer"
+     },
+     "done": {
+      "type": "integer"
+     },
+     "detected": {
+      "type": "integer"
+     },
+     "missed": {
+      "type": "integer"
+     },
+     "startedBy": {
+      "type": "string"
+     },
+     "createdAt": {
+      "type": "string"
+     },
+     "startedAt": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "finishedAt": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "host",
+     "status",
+     "windowSeconds",
+     "total",
+     "done",
+     "detected",
+     "missed",
+     "startedBy",
+     "createdAt"
+    ]
+   },
+   "RunDetail": {
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/Run"
+     },
+     {
+      "type": "object",
+      "properties": {
+       "steps": {
+        "type": "array",
+        "items": {
+         "$ref": "#/components/schemas/Step"
+        }
+       }
+      },
+      "required": [
+       "steps"
+      ]
+     }
+    ]
+   },
+   "Assignment": {
+    "type": "object",
+    "properties": {
+     "stepId": {
+      "type": "string"
+     },
+     "packId": {
+      "type": "string"
+     },
+     "marker": {
+      "type": "string"
+     },
+     "technique": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "stepId",
+     "packId",
+     "marker",
+     "technique"
+    ]
+   },
+   "CoverageTechnique": {
+    "type": "object",
+    "properties": {
+     "technique": {
+      "type": "string"
+     },
+     "techniqueName": {
+      "type": "string"
+     },
+     "tactic": {
+      "type": "string"
+     },
+     "tacticId": {
+      "type": "string"
+     },
+     "tested": {
+      "type": "integer"
+     },
+     "detected": {
+      "type": "integer"
+     },
+     "missed": {
+      "type": "integer"
+     },
+     "pending": {
+      "type": "integer"
+     },
+     "lastOutcome": {
+      "type": "string",
+      "enum": [
+       "pending",
+       "detected",
+       "missed",
+       "error"
+      ]
+     },
+     "lastRunAt": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "technique",
+     "techniqueName",
+     "tactic",
+     "tacticId",
+     "tested",
+     "detected",
+     "missed",
+     "pending",
+     "lastOutcome"
+    ]
+   },
+   "CoverageTactic": {
+    "type": "object",
+    "properties": {
+     "tactic": {
+      "type": "string"
+     },
+     "tacticId": {
+      "type": "string"
+     },
+     "detected": {
+      "type": "integer"
+     },
+     "missed": {
+      "type": "integer"
+     },
+     "pending": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "tactic",
+     "tacticId",
+     "detected",
+     "missed",
+     "pending"
+    ]
+   },
+   "Coverage": {
+    "type": "object",
+    "properties": {
+     "techniques": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/CoverageTechnique"
+      }
+     },
+     "tactics": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/CoverageTactic"
+      }
+     }
+    },
+    "required": [
+     "techniques",
+     "tactics"
+    ]
+   },
+   "Summary": {
+    "type": "object",
+    "properties": {
+     "hosts": {
+      "type": "object",
+      "properties": {
+       "total": {
+        "type": "integer"
+       },
+       "allowed": {
+        "type": "integer"
+       },
+       "paused": {
+        "type": "integer"
+       },
+       "silent": {
+        "type": "integer"
+       }
+      },
+      "required": [
+       "total",
+       "allowed",
+       "paused",
+       "silent"
+      ]
+     },
+     "runs": {
+      "type": "object",
+      "properties": {
+       "pending": {
+        "type": "integer"
+       },
+       "running": {
+        "type": "integer"
+       },
+       "done": {
+        "type": "integer"
+       },
+       "canceled": {
+        "type": "integer"
+       },
+       "total": {
+        "type": "integer"
+       },
+       "lastRunAt": {
+        "type": [
+         "string",
+         "null"
+        ]
+       }
+      },
+      "required": [
+       "pending",
+       "running",
+       "done",
+       "canceled",
+       "total",
+       "lastRunAt"
+      ]
+     },
+     "techniques": {
+      "type": "object",
+      "properties": {
+       "total": {
+        "type": "integer"
+       },
+       "detected": {
+        "type": "integer"
+       },
+       "missed": {
+        "type": "integer"
+       },
+       "pending": {
+        "type": "integer"
+       },
+       "available": {
+        "type": "integer"
+       }
+      },
+      "required": [
+       "total",
+       "detected",
+       "missed",
+       "pending",
+       "available"
+      ]
+     },
+     "tactics": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/CoverageTactic"
+      }
+     }
+    },
+    "required": [
+     "hosts",
+     "runs",
+     "techniques",
+     "tactics"
+    ]
+   }
+  }
+ },
+ "paths": {
+  "/api/v1/version": {
+   "get": {
+    "operationId": "version",
+    "tags": [
+     "Product"
+    ],
+    "summary": "Product and version",
+    "security": [],
+    "responses": {
+     "200": {
+      "description": "The product id and version.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "product": {
+           "type": "string"
+          },
+          "version": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "product",
+          "version"
+         ]
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/products": {
+   "get": {
+    "operationId": "listProducts",
+    "tags": [
+     "Product"
+    ],
+    "summary": "The install's other products",
+    "security": [
+     {
+      "session": []
+     },
+     {
+      "apiToken": []
+     },
+     {
+      "adminToken": []
+     }
+    ],
+    "x-openasy-role": "viewer",
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "products": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/ProductLink"
+           }
+          }
+         },
+         "required": [
+          "products"
+         ]
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Problem"
+     }
+    }
+   }
+  },
+  "/api/v1/summary": {
+   "get": {
+    "operationId": "summary",
+    "tags": [
+     "Product"
+    ],
+    "summary": "Overview",
+    "security": [
+     {
+      "session": []
+     },
+     {
+      "apiToken": []
+     },
+     {
+      "adminToken": []
+     }
+    ],
+    "x-openasy-role": "viewer",
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Summary"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Problem"
+     }
+    }
+   }
+  },
+  "/api/v1/tests": {
+   "get": {
+    "operationId": "listTests",
+    "tags": [
+     "Tests"
+    ],
+    "summary": "The fixed pack of benign tests",
+    "security": [
+     {
+      "session": []
+     },
+     {
+      "apiToken": []
+     },
+     {
+      "adminToken": []
+     }
+    ],
+    "x-openasy-role": "viewer",
+    "description": "The reviewed pack of harmless tests a run can choose from. The pack is code, not data: it changes only with a release (ADR 0072).",
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "tests": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/PackTest"
+           }
+          }
+         },
+         "required": [
+          "tests"
+         ]
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Problem"
+     }
+    }
+   }
+  },
+  "/api/v1/coverage": {
+   "get": {
+    "operationId": "coverage",
+    "tags": [
+     "Coverage"
+    ],
+    "summary": "Coverage per technique",
+    "security": [
+     {
+      "session": []
+     },
+     {
+      "apiToken": []
+     },
+     {
+      "adminToken": []
+     }
+    ],
+    "x-openasy-role": "viewer",
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Coverage"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Problem"
+     }
+    }
+   }
+  },
+  "/api/v1/runs": {
+   "get": {
+    "operationId": "listRuns",
+    "tags": [
+     "Runs"
+    ],
+    "summary": "List runs",
+    "security": [
+     {
+      "session": []
+     },
+     {
+      "apiToken": []
+     },
+     {
+      "adminToken": []
+     }
+    ],
+    "x-openasy-role": "viewer",
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "runs": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/Run"
+           }
+          }
+         },
+         "required": [
+          "runs"
+         ]
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Problem"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createRun",
+    "tags": [
+     "Runs"
+    ],
+    "summary": "Start a run",
+    "security": [
+     {
+      "session": []
+     },
+     {
+      "apiToken": []
+     },
+     {
+      "adminToken": []
+     }
+    ],
+    "x-openasy-role": "admin",
+    "description": "Starts a run of the chosen tests on one allowed host. Refused if the host is not allowed, already has a run in progress, or ran a simulation within the cooldown (ADR 0072).",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "hostId": {
+          "type": "string"
+         },
+         "tests": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          }
+         },
+         "windowSeconds": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 3600,
+          "default": 300
+         }
+        },
+        "required": [
+         "hostId",
+         "tests"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "The run, with its steps.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RunDetail"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Problem"
+     },
+     "403": {
+      "$ref": "#/components/responses/Problem"
+     },
+     "404": {
+      "$ref": "#/components/responses/Problem"
+     },
+     "409": {
+      "$ref": "#/components/responses/Problem"
+     },
+     "422": {
+      "$ref": "#/components/responses/Problem"
+     }
+    }
+   }
+  },
+  "/api/v1/runs/{id}": {
+   "get": {
+    "operationId": "getRun",
+    "tags": [
+     "Runs"
+    ],
+    "summary": "A run with its steps",
+    "security": [
+     {
+      "session": []
+     },
+     {
+      "apiToken": []
+     },
+     {
+      "adminToken": []
+     }
+    ],
+    "x-openasy-role": "viewer",
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RunDetail"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Problem"
+     },
+     "404": {
+      "$ref": "#/components/responses/Problem"
+     }
+    }
+   }
+  },
+  "/api/v1/runs/{id}/cancel": {
+   "post": {
+    "operationId": "cancelRun",
+    "tags": [
+     "Runs"
+    ],
+    "summary": "Cancel a run",
+    "security": [
+     {
+      "session": []
+     },
+     {
+      "apiToken": []
+     },
+     {
+      "adminToken": []
+     }
+    ],
+    "x-openasy-role": "admin",
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RunDetail"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Problem"
+     },
+     "403": {
+      "$ref": "#/components/responses/Problem"
+     },
+     "404": {
+      "$ref": "#/components/responses/Problem"
+     }
+    }
+   }
+  },
+  "/api/v1/hosts": {
+   "get": {
+    "operationId": "listHosts",
+    "tags": [
+     "Hosts"
+    ],
+    "summary": "List hosts",
+    "security": [
+     {
+      "session": []
+     },
+     {
+      "apiToken": []
+     },
+     {
+      "adminToken": []
+     }
+    ],
+    "x-openasy-role": "viewer",
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "hosts": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/Host"
+           }
+          }
+         },
+         "required": [
+          "hosts"
+         ]
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Problem"
+     }
+    }
+   }
+  },
+  "/api/v1/hosts/{id}/allow": {
+   "put": {
+    "operationId": "setHostAllowed",
+    "tags": [
+     "Hosts"
+    ],
+    "summary": "Allow or pause a host for simulation",
+    "security": [
+     {
+      "session": []
+     },
+     {
+      "apiToken": []
+     },
+     {
+      "adminToken": []
+     }
+    ],
+    "x-openasy-role": "admin",
+    "description": "Marks a host allowed for simulation, with a reason, or pauses it. Allowing needs a reason and is written to the audit log (ADR 0013, 0072).",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "allowed": {
+          "type": "boolean"
+         },
+         "reason": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "allowed"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Host"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Problem"
+     },
+     "403": {
+      "$ref": "#/components/responses/Problem"
+     },
+     "404": {
+      "$ref": "#/components/responses/Problem"
+     },
+     "422": {
+      "$ref": "#/components/responses/Problem"
+     }
+    }
+   }
+  },
+  "/api/v1/hosts/{id}": {
+   "delete": {
+    "operationId": "deleteHost",
+    "tags": [
+     "Hosts"
+    ],
+    "summary": "Remove a host",
+    "security": [
+     {
+      "session": []
+     },
+     {
+      "apiToken": []
+     },
+     {
+      "adminToken": []
+     }
+    ],
+    "x-openasy-role": "admin",
+    "responses": {
+     "204": {
+      "description": "Removed."
+     },
+     "401": {
+      "$ref": "#/components/responses/Problem"
+     },
+     "403": {
+      "$ref": "#/components/responses/Problem"
+     },
+     "404": {
+      "$ref": "#/components/responses/Problem"
+     }
+    }
+   }
+  },
+  "/api/v1/enrollment-tokens": {
+   "get": {
+    "operationId": "listEnrollmentTokens",
+    "tags": [
+     "Hosts"
+    ],
+    "summary": "List enrolment tokens",
+    "security": [
+     {
+      "session": []
+     },
+     {
+      "apiToken": []
+     },
+     {
+      "adminToken": []
+     }
+    ],
+    "x-openasy-role": "admin",
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "tokens": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/EnrollmentToken"
+           }
+          }
+         },
+         "required": [
+          "tokens"
+         ]
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Problem"
+     },
+     "403": {
+      "$ref": "#/components/responses/Problem"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createEnrollmentToken",
+    "tags": [
+     "Hosts"
+    ],
+    "summary": "Make an enrolment token",
+    "security": [
+     {
+      "session": []
+     },
+     {
+      "apiToken": []
+     },
+     {
+      "adminToken": []
+     }
+    ],
+    "x-openasy-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "maxUses": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000,
+          "default": 1
+         },
+         "days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30,
+          "default": 7
+         }
+        },
+        "required": [
+         "name"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "The token, shown once.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NewEnrollmentToken"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Problem"
+     },
+     "401": {
+      "$ref": "#/components/responses/Problem"
+     },
+     "403": {
+      "$ref": "#/components/responses/Problem"
+     },
+     "422": {
+      "$ref": "#/components/responses/Problem"
+     }
+    }
+   }
+  },
+  "/api/v1/enrollment-tokens/{id}": {
+   "delete": {
+    "operationId": "deleteEnrollmentToken",
+    "tags": [
+     "Hosts"
+    ],
+    "summary": "Delete an enrolment token",
+    "security": [
+     {
+      "session": []
+     },
+     {
+      "apiToken": []
+     },
+     {
+      "adminToken": []
+     }
+    ],
+    "x-openasy-role": "admin",
+    "responses": {
+     "204": {
+      "description": "Deleted."
+     },
+     "401": {
+      "$ref": "#/components/responses/Problem"
+     },
+     "403": {
+      "$ref": "#/components/responses/Problem"
+     },
+     "404": {
+      "$ref": "#/components/responses/Problem"
+     }
+    }
+   }
+  },
+  "/api/v1/agent/enroll": {
+   "post": {
+    "operationId": "enrollAgent",
+    "tags": [
+     "Agent"
+    ],
+    "summary": "Enrol an agent",
+    "security": [],
+    "description": "The agent's first call: trades an enrolment token for the host's own secret, returned once and kept only as a hash. The host runs nothing until an admin allows it.",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "token": {
+          "type": "string"
+         },
+         "name": {
+          "type": "string"
+         },
+         "report": {
+          "$ref": "#/components/schemas/Report"
+         }
+        },
+        "required": [
+         "token",
+         "name",
+         "report"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "The host's secret.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "hostId": {
+           "type": "string"
+          },
+          "secret": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "hostId",
+          "secret"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Problem"
+     },
+     "401": {
+      "$ref": "#/components/responses/Problem"
+     },
+     "409": {
+      "$ref": "#/components/responses/Problem"
+     },
+     "422": {
+      "$ref": "#/components/responses/Problem"
+     }
+    }
+   }
+  },
+  "/api/v1/agent/assignments": {
+   "post": {
+    "operationId": "agentAssignments",
+    "tags": [
+     "Agent"
+    ],
+    "summary": "The tests this host should run now",
+    "security": [
+     {
+      "agentSecret": []
+     }
+    ],
+    "description": "The agent polls this. It is answered with pending steps as a pack id and a marker only, never a command. An allowed host that is paused gets an empty list.",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "report": {
+          "$ref": "#/components/schemas/Report"
+         }
+        },
+        "required": [
+         "report"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "assignments": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/Assignment"
+           }
+          }
+         },
+         "required": [
+          "assignments"
+         ]
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Problem"
+     }
+    }
+   }
+  },
+  "/api/v1/agent/results": {
+   "post": {
+    "operationId": "agentResult",
+    "tags": [
+     "Agent"
+    ],
+    "summary": "Report what a step did",
+    "security": [
+     {
+      "agentSecret": []
+     }
+    ],
+    "description": "The agent reports what one step did, or that it refused a pack id it does not have. The server never learns a detection from the agent; detection is checked by reading the detecting products.",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "report": {
+          "$ref": "#/components/schemas/Report"
+         },
+         "stepId": {
+          "type": "string"
+         },
+         "status": {
+          "type": "string",
+          "enum": [
+           "done",
+           "error",
+           "refused"
+          ]
+         },
+         "did": {
+          "type": "string"
+         },
+         "cleanedUp": {
+          "type": "boolean"
+         },
+         "detail": {
+          "type": "string"
+         },
+         "error": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "report",
+         "stepId",
+         "status"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "recorded": {
+           "type": "integer"
+          }
+         },
+         "required": [
+          "recorded"
+         ]
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Problem"
+     },
+     "404": {
+      "$ref": "#/components/responses/Problem"
+     },
+     "422": {
+      "$ref": "#/components/responses/Problem"
+     }
+    }
+   }
+  },
+  "/healthz": {
+   "get": {
+    "operationId": "liveness",
+    "tags": [
+     "Product"
+    ],
+    "summary": "Liveness",
+    "security": [],
+    "responses": {
+     "200": {
+      "description": "The process is running.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Status"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/readyz": {
+   "get": {
+    "operationId": "readiness",
+    "tags": [
+     "Product"
+    ],
+    "summary": "Readiness",
+    "security": [],
+    "responses": {
+     "200": {
+      "description": "Ready.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Status"
+        }
+       }
+      }
+     },
+     "503": {
+      "description": "Not ready.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Status"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/metrics": {
+   "get": {
+    "operationId": "metrics",
+    "tags": [
+     "Product"
+    ],
+    "summary": "Prometheus metrics",
+    "security": [],
+    "responses": {
+     "200": {
+      "description": "Metrics in the Prometheus text format.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ }
+}

@@ -1,0 +1,41 @@
+# Attack Simulation. It runs harmless MITRE ATT&CK tests from a fixed pack on hosts you allow, then reads the detecting
+# products (SIEM, Runtime) to see whether they caught each one, and shows coverage per technique (ADR 0072).
+#
+#   openssl rand -hex 32 > openasy-kek   # this install's key: seals sign-in secrets (ADR 0021). Keep it with your backups
+#   docker compose up -d
+#   docker compose logs attack-simulation | grep 'no owner yet'   # the one-time link that creates the owner account
+#
+# Then, under Hosts, make an enrolment token and start attack-simulation-agent on a host (see its README). A host runs
+# nothing until an admin allows it for simulation, with a reason.
+services:
+  attack-simulation:
+    image: ghcr.io/openasy/attack-simulation:0.1.0
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp]
+    ports:
+      - "127.0.0.1:8080:8080" # UI and API; put a TLS proxy in front so agents on other hosts reach it over https
+    volumes:
+      - attack-simulation-data:/data # SQLite database: hosts, runs, steps and enrolment tokens
+    secrets:
+      - openasy-kek # mounted at /run/secrets/openasy-kek
+    environment:
+      # The address people and agents open Attack Simulation at; with a TLS proxy in front, its https:// URL.
+      ATTACKSIM_PUBLIC_URL: ${ATTACKSIM_PUBLIC_URL:-http://localhost:8080}
+      # Shortest gap between two runs on the same host, so simulation never floods a host.
+      ATTACKSIM_RUN_COOLDOWN: ${ATTACKSIM_RUN_COOLDOWN:-60}
+      # Read the detecting products to check whether a test was detected (ADR 0023). A scoped, read-only token each:
+      # ATTACKSIM_DETECTORS: "siem=http://siem:8080|${SIEM_READ_TOKEN},runtime=http://runtime:8080|${RUNTIME_READ_TOKEN}"
+      # Sign in with your identity provider (OIDC), see the README:
+      # OPENASY_OIDC_ISSUER: https://login.example.com
+      # OPENASY_OIDC_CLIENT_ID: attack-simulation
+      # OPENASY_OIDC_CLIENT_SECRET: ${OPENASY_OIDC_CLIENT_SECRET}
+
+volumes:
+  attack-simulation-data:
+
+secrets:
+  openasy-kek:
+    file: ./openasy-kek
