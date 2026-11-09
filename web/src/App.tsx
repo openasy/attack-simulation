@@ -66,7 +66,7 @@ import {
   type Step,
   type Summary,
 } from "./api.ts";
-import { useT } from "./i18n.ts";
+import { useT, viewerLocale, setViewerLocale } from "./i18n.ts";
 import { search } from "./search.ts";
 
 const PAGES = ["coverage", "runs", "tests", "hosts", "setup", "account", "members", "signin", "tokens", "about"] as const;
@@ -132,7 +132,7 @@ function useAction(after: () => void) {
   return [run, error] as const;
 }
 
-const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+const when = (iso: string) => new Date(iso).toLocaleString(viewerLocale(), { dateStyle: "medium", timeStyle: "short" });
 const post = (body: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body) });
 
 const OUTCOME_TONE: Record<Outcome, Tone> = { detected: "success", missed: "danger", pending: "neutral", error: "warning" };
@@ -951,6 +951,7 @@ export function App() {
   const installBrand = useInstallBrand();
   const [theme] = useThemePreference();
   const [locale] = useLocalePreference();
+  setViewerLocale(locale);
   return (
     // The install's brand from config/brand.env (ADR 0053); OpenAsy's own look where it sets none.
     <BrandProvider theme={theme} locale={locale} brand={{ name: "OpenAsy", organization: undefined, ...installBrand }} className="min-h-screen">
