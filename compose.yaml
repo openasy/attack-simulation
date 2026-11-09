@@ -9,7 +9,7 @@
 # nothing until an admin allows it for simulation, with a reason.
 services:
   attack-simulation:
-    image: ghcr.io/openasy/attack-simulation:0.1.0
+    image: ghcr.io/openasy/attack-simulation:0.1.1
     restart: unless-stopped
     read_only: true
     cap_drop: [ALL]

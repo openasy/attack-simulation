@@ -1,6 +1,6 @@
 {
   "name": "@openasy/attack-simulation",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "OpenAsy Attack Simulation: run harmless MITRE ATT&CK techniques from a fixed pack on hosts you allow, then check whether SIEM and Runtime detected them, and show coverage per technique.",
   "license": "AGPL-3.0-only",
